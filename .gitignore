@@ -1,0 +1,4 @@
+*.zip
+/20_Validation/
+/20_categories_train*/
+*.pdf
