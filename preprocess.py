@@ -14,34 +14,34 @@ class feature_extract:
                       2: "red-channel average",
                       3: "green-channel average",
                       4: "blue-channel average",
-                      5: "red-channel absolute difference",
-                      6: "green-channel absolute difference",
-                      7: "blue-channel absolute difference",
-                      8: "red-channel variance",
-                      9: "green-channel variance",
-                      10: "blue-channel variance",
+                      5: "red-channel variance",
+                      6: "green-channel variance",
+                      7: "blue-channel variance",
+                      8: "laplacian average",
+                      9: "laplacian variance",
 
                       11: "red-channel quantiles",
                       12: "green-channel quantiles",
                       13: "blue-channel quantiles",
-                      14: "upsampled gray image"}
+                      14: "laplacian quantiles",
+                      15: "upsampled gray image"}
 
         self.funcs = {0: feature_extract.ft_size,
                       1: feature_extract.ft_aspect_ratio,
                       2: feature_extract.ft_r_mean,
                       3: feature_extract.ft_g_mean,
                       4: feature_extract.ft_b_mean,
-                      5: feature_extract.ft_r_abs,
-                      6: feature_extract.ft_g_abs,
-                      7: feature_extract.ft_b_abs,
-                      8: feature_extract.ft_r_var,
-                      9: feature_extract.ft_g_var,
-                      10: feature_extract.ft_b_var,
+                      5: feature_extract.ft_r_var,
+                      6: feature_extract.ft_g_var,
+                      7: feature_extract.ft_b_var,
+                      8: feature_extract.ft_e_mean,
+                      9: feature_extract.ft_e_var,
 
                       11: feature_extract.ft_r_quantile,
                       12: feature_extract.ft_g_quantile,
                       13: feature_extract.ft_b_quantile,
-                      14: feature_extract.ft_shrinked_gray}
+                      14: feature_extract.ft_e_quantile,
+                      15: feature_extract.ft_shrinked_gray}
 
         self.labels = {0: "Airplanes", 1: "Bear", 2: "Blimp", 3: "Comet", 4: "Crab",
                        5: "Dog", 6: "Dolphin", 7: "Giraffe", 8: "Goat", 9: "Gorilla",
@@ -76,21 +76,6 @@ class feature_extract:
         return np.mean(image[:, :, 2]) if len(image.shape) == 3 else np.mean(image)
 
     @staticmethod
-    def ft_r_abs(image):
-        # the absolute range of the red-channel for the images
-        return (np.max(image[:, :, 0]) - np.min(image[:, :, 0])) if len(image.shape) == 3 else (np.max(image) - np.min(image))
-
-    @staticmethod
-    def ft_g_abs(image):
-        # the absolute range of the green-channel for the images
-        return (np.max(image[:, :, 1]) - np.min(image[:, :, 1])) if len(image.shape) == 3 else (np.max(image) - np.min(image))
-
-    @staticmethod
-    def ft_b_abs(image):
-        # the absolute range of the blue-channel for the images
-        return (np.max(image[:, :, 2]) - np.min(image[:, :, 2])) if len(image.shape) == 3 else (np.max(image) - np.min(image))
-
-    @staticmethod
     def ft_r_var(image):
         # the absolute variance of the red-channel for the images
         return np.var(image[:, :, 0]) if len(image.shape) == 3 else np.var(image)
@@ -104,6 +89,16 @@ class feature_extract:
     def ft_b_var(image):
         # the absolute variance of the green-channel for the images
         return np.var(image[:, :, 2]) if len(image.shape) == 3 else np.var(image)
+
+    @staticmethod
+    def ft_e_mean(image):
+        # obtain laplacian/edge mean
+        return np.mean(image)
+
+    @staticmethod
+    def ft_e_var(image):
+        # obtain laplacian/edge variance
+        return np.var(image)
 
     # matrix features
 
@@ -121,6 +116,11 @@ class feature_extract:
     def ft_b_quantile(image):
         # find various qunatile values in blue channel
         return feature_extract.quantiles(image[:, :, 2]) if len(image.shape) == 3 else feature_extract.quantiles(image[:, :])
+
+    @staticmethod
+    def ft_e_quantile(image):
+        # find quantile values in laplacian/edge
+        return feature_extract.quantiles(image)
 
     @staticmethod
     def ft_r_bucket(image):
@@ -143,9 +143,14 @@ class feature_extract:
         image = feature_extract.resize_image(image)
         return feature_extract.convert_grey(image).flatten()
 
+    @staticmethod
+    def ft_get_edge(image):
+        image = feature_extract.convert_grey(image)
+        return cv2.Laplacian(image, cv2.CV_64F, ksize=11)
+
     # helper functions
     @staticmethod
-    def quantiles(image_single_color, divide=[0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9]):
+    def quantiles(image_single_color, divide=np.arange(0, 1.1, 0.1)):
         return np.quantile(image_single_color.flatten(), divide)
 
     @staticmethod
@@ -204,10 +209,16 @@ class feature_extract:
 
         return np.array(image)
 
+    # intermediate functions
     @staticmethod
     def trim_all(images):
         # convert images series
         return images.apply(feature_extract.trim)
+
+    @staticmethod
+    def edge_all(images):
+        # convert images seris
+        return images.apply(feature_extract.ft_get_edge)
 
 
 def feature_frame(df):
@@ -224,13 +235,21 @@ def feature_frame(df):
         df_X[FE.names[i]] = images.apply(FE.funcs[i])
     # convert all images to same size first 400x300
     images = pd.Series(images.apply(lambda x: FE.resize_image(x, 400, 300)))
+    laplacian = FE.edge_all(images)
     # add all scalar features
-    for i in range(2, 11):
+    for i in range(2, 10):
         print('Processing..', FE.names[i])
-        df_X[FE.names[i]] = images.apply(FE.funcs[i])
-    for j in range(11, 14):
+        if i in [8, 9]:
+            df_X[FE.names[i]] = laplacian.apply(FE.funcs[i])
+        else:
+            df_X[FE.names[i]] = images.apply(FE.funcs[i])
+
+    for j in range(11, 15):
         print('Processing..', FE.names[j])
-        temp = images.apply(FE.funcs[j]).tolist()
+        if j == 14:
+            temp = laplacian.apply(FE.funcs[j]).tolist()
+        else:
+            temp = images.apply(FE.funcs[j]).tolist()
         temp = pd.DataFrame(
             temp, columns=[FE.names[j] + '_' + str(x) for x in np.arange(len(temp[0]))])
         df_X = pd.concat([df_X, temp], axis=1)
