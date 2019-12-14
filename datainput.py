@@ -41,4 +41,4 @@ def read_test_data(file_path):
     res = pd.DataFrame()
     res['Pictures'] = image_array
     res['Order'] = image_name
-    return res.iloc[np.argsort(res.Order.apply(int)), [0]]
+    return res.iloc[np.argsort(res.Order.apply(int)), [0]].reset_index(drop=True)
